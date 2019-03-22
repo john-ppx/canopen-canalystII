@@ -144,9 +144,32 @@ CO_ReturnError_t CO_CANmodule_init(
             config.AccCode=0;
             config.AccMask=0xFFFFFFFF;
             config.Filter=1;//接收所有帧
-            config.Timing0=0x00;/*波特率500Kbps  0x00  0x1C*/
-            config.Timing1=0x1C;
             config.Mode=0;//正常模式        
+            switch(CANbitRate) {
+                case 1000:
+                    config.Timing0=0x00;
+                    config.Timing1=0x14;
+                break;
+                case 500:
+                    config.Timing0=0x00;/*波特率500Kbps  0x00  0x1C*/
+                    config.Timing1=0x1C;
+                break;
+                case 250:
+                    config.Timing0=0x01;
+                    config.Timing1=0x1C;
+                break;
+                case 125:
+                    config.Timing0=0x03;
+                    config.Timing1=0x1C;
+                break;
+                case 100:
+                    config.Timing0=0x04;
+                    config.Timing1=0x1C;
+                break;
+                default:
+                    config.Timing0=0x03;
+                    config.Timing1=0x1C;
+            }
 
             if(VCI_InitCAN(DRIVER_DEVICE_TYPE, 0, CANbaseAddress, &config) != 1) {
 		        printf(">>Init can2 error\n");

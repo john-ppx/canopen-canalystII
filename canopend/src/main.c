@@ -272,7 +272,7 @@ int main (int argc, char *argv[]) {
             /* use value from Object dictionary, if not set by program arguments */
             nodeId = OD_CANNodeID;
         }
-        err = CO_init(CANdevice0Index, nodeId, 0);
+        err = CO_init(CANdevice0Index, nodeId, OD_CANBitRate);
         if(err != CO_ERROR_NO) {
             char s[120];
             snprintf(s, 120, "Communication reset - CANopen initialization failed, err=%d", err);
@@ -540,7 +540,7 @@ static void* receive_thread(void* arg) {
     config.AccCode=0;
     config.AccMask=0xFFFFFFFF;
     config.Filter=1;//接收所有帧
-    config.Timing0=0x00;/*波特率500Kbps  0x00  0x1C*/
+    config.Timing0=0x01;/*波特率500Kbps  0x00  0x1C*/
     config.Timing1=0x1C;
     config.Mode=0;//正常模式        
 
