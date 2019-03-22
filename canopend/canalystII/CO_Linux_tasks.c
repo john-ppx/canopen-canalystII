@@ -194,17 +194,17 @@ void CANrx_taskTmr_init(int fdEpoll, long intervalns, uint16_t *maxTime) {
     struct epoll_event ev;
 
     /* get file descriptors */
-    taskRT.fdRx0 = CO->CANmodule[0]->fd;
+    //taskRT.fdRx0 = CO->CANmodule[0]->fd;
 
     taskRT.fdTmr = timerfd_create(CLOCK_MONOTONIC, 0);
     if(taskRT.fdTmr == -1)
         CO_errExit("CANrx_taskTmr_init - timerfd_create failed");
 
     /* add events for epoll */
-    ev.events = EPOLLIN;
-    ev.data.fd = taskRT.fdRx0;
-    if(epoll_ctl(fdEpoll, EPOLL_CTL_ADD, taskRT.fdRx0, &ev) == -1)
-        CO_errExit("CANrx_taskTmr_init - epoll_ctl CANrx failed");
+    //ev.events = EPOLLIN;
+    //ev.data.fd = taskRT.fdRx0;
+    //if(epoll_ctl(fdEpoll, EPOLL_CTL_ADD, taskRT.fdRx0, &ev) == -1)
+    //    CO_errExit("CANrx_taskTmr_init - epoll_ctl CANrx failed");
 
     ev.events = EPOLLIN;
     ev.data.fd = taskRT.fdTmr;
@@ -237,14 +237,12 @@ void CANrx_taskTmr_close(void) {
 bool_t CANrx_taskTmr_process(int fd) {
     bool_t wasProcessed = true;
 
-    /* Get received CAN message. */
-    if(fd == taskRT.fdRx0) {
-        CO_CANrxWait(CO->CANmodule[0]);
-    }
-
     /* Execute taskTmr */
-    else if(fd == taskRT.fdTmr) {
+    if(fd == taskRT.fdTmr) {
         uint64_t tmrExp;
+
+        /* Read and pre-process all msg! */
+        CO_CANrxWait(CO->CANmodule[0]);
 
         /* Wait for timer to expire */
         if(read(taskRT.fdTmr, &tmrExp, sizeof(tmrExp)) != sizeof(uint64_t))
@@ -294,9 +292,7 @@ bool_t CANrx_taskTmr_process(int fd) {
 
         /* Unlock */
         CO_UNLOCK_OD();
-    }
-
-    else {
+    } else {
         wasProcessed = false;
     }
 

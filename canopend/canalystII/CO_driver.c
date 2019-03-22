@@ -26,11 +26,13 @@
 
 #include "CO_driver.h"
 #include "CO_Emergency.h"
+#include "controlcan.h"
 #include <string.h> /* for memcpy */
 #include <stdlib.h> /* for malloc, free */
 #include <errno.h>
 #include <sys/socket.h>
 
+#define DRIVER_DEVICE_TYPE   VCI_USBCAN2
 
 /******************************************************************************/
 #ifndef CO_SINGLE_THREAD
@@ -42,58 +44,6 @@
 /** Set socketCAN filters *****************************************************/
 static CO_ReturnError_t setFilters(CO_CANmodule_t *CANmodule){
     CO_ReturnError_t ret = CO_ERROR_NO;
-
-    if(CANmodule->useCANrxFilters){
-        int nFiltersIn, nFiltersOut;
-        struct can_filter *filtersOut;
-
-        nFiltersIn = CANmodule->rxSize;
-        nFiltersOut = 0;
-        filtersOut = (struct can_filter *) calloc(nFiltersIn, sizeof(struct can_filter));
-
-        if(filtersOut == NULL){
-            ret = CO_ERROR_OUT_OF_MEMORY;
-        }else{
-            int i;
-            int idZeroCnt = 0;
-
-            /* Copy filterIn to filtersOut. Accept only first filter with
-             * can_id=0, omit others. */
-            for(i=0; i<nFiltersIn; i++){
-                struct can_filter *fin;
-
-                fin = &CANmodule->filter[i];
-                if(fin->can_id == 0){
-                    idZeroCnt++;
-                }
-                if(fin->can_id != 0 || idZeroCnt == 1){
-                    struct can_filter *fout;
-
-                    fout = &filtersOut[nFiltersOut++];
-                    fout->can_id = fin->can_id;
-                    fout->can_mask = fin->can_mask;
-                }
-            }
-
-            if(setsockopt(CANmodule->fd, SOL_CAN_RAW, CAN_RAW_FILTER,
-                          filtersOut, sizeof(struct can_filter) * nFiltersOut) != 0)
-            {
-                ret = CO_ERROR_ILLEGAL_ARGUMENT;
-            }
-
-            free(filtersOut);
-        }
-    }else{
-        /* Use one socketCAN filter, match any CAN address, including extended and rtr. */
-        CANmodule->filter[0].can_id = 0;
-        CANmodule->filter[0].can_mask = 0;
-        if(setsockopt(CANmodule->fd, SOL_CAN_RAW, CAN_RAW_FILTER,
-            &CANmodule->filter[0], sizeof(struct can_filter)) != 0)
-        {
-            ret = CO_ERROR_ILLEGAL_ARGUMENT;
-        }
-    }
-
     return ret;
 }
 
@@ -162,48 +112,32 @@ CO_ReturnError_t CO_CANmodule_init(
 
     /* First time only configuration */
     if(ret == CO_ERROR_NO && CANmodule->wasConfigured == 0){
-        struct sockaddr_can sockAddr;
-
         CANmodule->wasConfigured = 1;
 
-        /* Create and bind socket */
-        CANmodule->fd = socket(AF_CAN, SOCK_RAW, CAN_RAW);
-        if(CANmodule->fd < 0){
+        if(VCI_OpenDevice(DRIVER_DEVICE_TYPE, 0, 0) != 1) {//打开设备
             ret = CO_ERROR_ILLEGAL_ARGUMENT;
-        }else{
-            sockAddr.can_family = AF_CAN;
-            sockAddr.can_ifindex = CANbaseAddress;
-            if(bind(CANmodule->fd, (struct sockaddr*)&sockAddr, sizeof(sockAddr)) != 0){
-                ret = CO_ERROR_ILLEGAL_ARGUMENT;
-            }
-        }
+        } else {
+            //初始化参数，严格参数二次开发函数库说明书。
+            VCI_INIT_CONFIG config;
+            config.AccCode=0;
+            config.AccMask=0xFFFFFFFF;
+            config.Filter=1;//接收所有帧
+            config.Timing0=0x00;/*波特率500Kbps  0x00  0x1C*/
+            config.Timing1=0x1C;
+            config.Mode=0;//正常模式		
 
-        /* allocate memory for filter array */
-        if(ret == CO_ERROR_NO){
-            CANmodule->filter = (struct can_filter *) calloc(rxSize, sizeof(struct can_filter));
-            if(CANmodule->filter == NULL){
-                ret = CO_ERROR_OUT_OF_MEMORY;
+            if(VCI_InitCAN(DRIVER_DEVICE_TYPE, 0, CANbaseAddress, &config) != 1) {
+                ret = CO_ERROR_ILLEGAL_ARGUMENT;
+            } else {
+	            if(VCI_StartCAN(DRIVER_DEVICE_TYPE, 0, CANbaseAddress) != 1)
+                    ret = CO_ERROR_ILLEGAL_ARGUMENT;
             }
         }
     }
 
     /* Additional check. */
-    if(ret == CO_ERROR_NO && CANmodule->filter == NULL){
-        ret = CO_ERROR_ILLEGAL_ARGUMENT;
-    }
-
-    /* Configure CAN module hardware filters */
-    if(ret == CO_ERROR_NO && CANmodule->useCANrxFilters){
-        /* Match filter, standard 11 bit CAN address only, no rtr */
-        for(i=0U; i<rxSize; i++){
-            CANmodule->filter[i].can_id = 0;
-            CANmodule->filter[i].can_mask = CAN_SFF_MASK | CAN_EFF_FLAG | CAN_RTR_FLAG;
-        }
-    }
-
-    /* close CAN module filters for now. */
     if(ret == CO_ERROR_NO){
-        setsockopt(CANmodule->fd, SOL_CAN_RAW, CAN_RAW_FILTER, NULL, 0);
+        ret = CO_ERROR_ILLEGAL_ARGUMENT;
     }
 
     return ret;
@@ -212,9 +146,8 @@ CO_ReturnError_t CO_CANmodule_init(
 
 /******************************************************************************/
 void CO_CANmodule_disable(CO_CANmodule_t *CANmodule){
-    close(CANmodule->fd);
-    free(CANmodule->filter);
-    CANmodule->filter = NULL;
+	VCI_ResetCAN(DRIVER_DEVICE_TYPE, 0, CANmodule->CANbaseAddress);//复位CAN1通道。
+	VCI_CloseDevice(DRIVER_DEVICE_TYPE, 0);//关闭设备。
 }
 
 
@@ -237,7 +170,7 @@ CO_ReturnError_t CO_CANrxBufferInit(
     CO_ReturnError_t ret = CO_ERROR_NO;
 
     if((CANmodule!=NULL) && (object!=NULL) && (pFunct!=NULL) &&
-       (CANmodule->filter!=NULL) && (index < CANmodule->rxSize)){
+       (index < CANmodule->rxSize)){
         /* buffer, which will be configured */
         CO_CANrx_t *buffer = &CANmodule->rxArray[index];
 
@@ -246,16 +179,11 @@ CO_ReturnError_t CO_CANrxBufferInit(
         buffer->pFunct = pFunct;
 
         /* Configure CAN identifier and CAN mask, bit aligned with CAN module. */
-        buffer->ident = ident & CAN_SFF_MASK;
-        if(rtr){
-            buffer->ident |= CAN_RTR_FLAG;
-        }
-        buffer->mask = (mask & CAN_SFF_MASK) | CAN_EFF_FLAG | CAN_RTR_FLAG;
+        buffer->ident = ident;
+        buffer->mask = mask;
 
         /* Set CAN hardware module filter and mask. */
         if(CANmodule->useCANrxFilters){
-            CANmodule->filter[index].can_id = buffer->ident;
-            CANmodule->filter[index].can_mask = buffer->mask;
             if(CANmodule->CANnormal){
                 ret = setFilters(CANmodule);
             }
@@ -285,14 +213,20 @@ CO_CANtx_t *CO_CANtxBufferInit(
         buffer = &CANmodule->txArray[index];
 
         /* CAN identifier, bit aligned with CAN module registers */
-        buffer->ident = ident & CAN_SFF_MASK;
+        buffer->ident = ident;
         if(rtr){
-            buffer->ident |= CAN_RTR_FLAG;
+            buffer->RemoteFlag = 1;//是否是远程帧
         }
 
         buffer->DLC = noOfBytes;
         buffer->bufferFull = false;
         buffer->syncFlag = syncFlag;
+
+        buffer->SendType = 0;
+        buffer->ExternFlag = 0;//是否是扩展帧
+
+        buffer->TimeStamp = 0;
+        buffer->TimeFlag  = 0;
     }
 
     return buffer;
@@ -303,15 +237,14 @@ CO_CANtx_t *CO_CANtxBufferInit(
 CO_ReturnError_t CO_CANsend(CO_CANmodule_t *CANmodule, CO_CANtx_t *buffer){
     CO_ReturnError_t err = CO_ERROR_NO;
     ssize_t n;
-    size_t count = sizeof(struct can_frame);
 
-    n = write(CANmodule->fd, buffer, count);
+    n = VCI_Transmit(DRIVER_DEVICE_TYPE, 0, CANmodule->CANbaseAddress, (PVCI_CAN_OBJ)buffer, 1);
 #ifdef CO_LOG_CAN_MESSAGES
     void CO_logMessage(const CanMsg *msg);
     CO_logMessage((const CanMsg*) buffer);
 #endif
 
-    if(n != count){
+    if(n != 1){
         CO_errorReport((CO_EM_t*)CANmodule->em, CO_EM_CAN_TX_OVERFLOW, CO_EMC_CAN_OVERRUN, n);
         err = CO_ERROR_TX_OVERFLOW;
     }
@@ -391,52 +324,48 @@ void CO_CANverifyErrors(CO_CANmodule_t *CANmodule){
 
 /******************************************************************************/
 void CO_CANrxWait(CO_CANmodule_t *CANmodule){
-    struct can_frame msg;
-    int n, size;
+    VCI_CAN_OBJ msg;
+    int i, n;
+    CO_CANrxMsg_t *rcvMsg;      /* pointer to received message in CAN module */
+    uint32_t rcvMsgIdent;       /* identifier of the received message */
+    CO_CANrx_t *buffer;         /* receive message buffer from CO_CANmodule_t object. */
+    bool_t msgMatched = false;
 
     if(CANmodule == NULL){
         errno = EFAULT;
         CO_errExit("CO_CANreceive - CANmodule not configured.");
     }
 
-    /* Read socket and pre-process message */
-    size = sizeof(struct can_frame);
-    n = read(CANmodule->fd, &msg, size);
+    if(!CANmodule->CANnormal)
+        return;
 
-    if(CANmodule->CANnormal){
-        if(n != size){
-            /* This happens only once after error occurred (network down or something). */
-            CO_errorReport((CO_EM_t*)CANmodule->em, CO_EM_CAN_RXB_OVERFLOW, CO_EMC_COMMUNICATION, n);
+    /* Read and pre-process message one by one */
+    n = VCI_Receive(DRIVER_DEVICE_TYPE, 0, CANmodule->CANbaseAddress, &msg, 1, 0);
+    while(n == 1){
+        rcvMsg = (CO_CANrxMsg_t *) &msg;
+        rcvMsgIdent = rcvMsg->ident;
+
+        /* Search rxArray form CANmodule for the matching CAN-ID. */
+        buffer = &CANmodule->rxArray[0];
+        for(i = CANmodule->rxSize; i > 0U; i--){
+            if(((rcvMsgIdent ^ buffer->ident) & buffer->mask) == 0U){
+                msgMatched = true;
+                break;
+            }
+            buffer++;
         }
-        else{
-            CO_CANrxMsg_t *rcvMsg;      /* pointer to received message in CAN module */
-            uint32_t rcvMsgIdent;       /* identifier of the received message */
-            CO_CANrx_t *buffer;         /* receive message buffer from CO_CANmodule_t object. */
-            int i;
-            bool_t msgMatched = false;
 
-            rcvMsg = (CO_CANrxMsg_t *) &msg;
-            rcvMsgIdent = rcvMsg->ident;
-
-            /* Search rxArray form CANmodule for the matching CAN-ID. */
-            buffer = &CANmodule->rxArray[0];
-            for(i = CANmodule->rxSize; i > 0U; i--){
-                if(((rcvMsgIdent ^ buffer->ident) & buffer->mask) == 0U){
-                    msgMatched = true;
-                    break;
-                }
-                buffer++;
-            }
-
-            /* Call specific function, which will process the message */
-            if(msgMatched && (buffer->pFunct != NULL)){
-                buffer->pFunct(buffer->object, rcvMsg);
-            }
+        /* Call specific function, which will process the message */
+        if(msgMatched && (buffer->pFunct != NULL)){
+            buffer->pFunct(buffer->object, rcvMsg);
+        }
 
 #ifdef CO_LOG_CAN_MESSAGES
-            void CO_logMessage(const CanMsg *msg);
-            CO_logMessage((CanMsg*)&rcvMsg);
+        void CO_logMessage(const CanMsg *msg);
+        CO_logMessage((CanMsg*)&rcvMsg);
 #endif
-        }
+        /* Read next message */
+        n = VCI_Receive(DRIVER_DEVICE_TYPE, 0, CANmodule->CANbaseAddress, &msg, 1, 0);
     }
 }
+

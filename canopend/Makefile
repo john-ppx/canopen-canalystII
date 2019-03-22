@@ -55,7 +55,7 @@ SOURCES =       $(STACKDRV_SRC)/CO_driver.c         \
 OBJS = $(SOURCES:%.c=%.o)
 CC ?= gcc
 CFLAGS = -Wall -g $(INCLUDE_DIRS)
-LDFLAGS = -lrt -pthread
+LDFLAGS = -L$(STACKDRV_SRC)/ -lcontrolcan -lrt -pthread -lusb
 
 
 .PHONY: all clean
@@ -69,4 +69,4 @@ clean:
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(LINK_TARGET): $(OBJS)
-	$(CC) $(LDFLAGS) $^ -o $@
+	$(CC) $^ -o $@ $(LDFLAGS) 

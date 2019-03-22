@@ -104,12 +104,17 @@ typedef enum{
     CO_ERROR_CRC                = -14
 }CO_ReturnError_t;
 
-
 /* CAN receive message structure as aligned in CAN module. */
 typedef struct{
     uint32_t        ident;
+    uint32_t        TimeStamp;
+    uint8_t         TimeFlag;
+    uint8_t   		SendType;
+    uint8_t   		RemoteFlag;//是否是远程帧
+    uint8_t   		ExternFlag;//是否是扩展帧
     uint8_t         DLC;
-    uint8_t         data[8] __attribute__((aligned(8)));
+    uint8_t         data[8];
+	uint8_t         Reserved[3];
 }CO_CANrxMsg_t;
 
 
@@ -124,9 +129,15 @@ typedef struct{
 
 /* Transmit message object as aligned in CAN module. */
 typedef struct{
-    uint32_t            ident;
-    uint8_t             DLC;
-    uint8_t             data[8] __attribute__((aligned(8)));
+    uint32_t        ident;
+    uint32_t        TimeStamp;
+    uint8_t         TimeFlag;
+    uint8_t   		SendType;
+    uint8_t   		RemoteFlag;//是否是远程帧
+    uint8_t   		ExternFlag;//是否是扩展帧
+    uint8_t         DLC;
+    uint8_t         data[8];
+	uint8_t         Reserved[3];
     volatile bool_t     bufferFull;
     volatile bool_t     syncFlag;
 }CO_CANtx_t;
@@ -143,8 +154,6 @@ typedef struct{
     CO_CANtx_t         *txArray;
     uint16_t            txSize;
     uint16_t            wasConfigured;/* Zero only on first run of CO_CANmodule_init */
-    int                 fd;         /* CAN_RAW socket file descriptor */
-    struct can_filter  *filter;     /* array of CAN filters of size rxSize */
     volatile bool_t     CANnormal;
     volatile bool_t     useCANrxFilters;
     volatile bool_t     bufferInhibitFlag;
