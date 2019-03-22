@@ -79,6 +79,8 @@ static void*                rt_thread(void* arg);
 static pthread_t            rt_thread_id;
 static int                  rt_thread_epoll_fd;
 #endif
+static void*                receive_thread(void* arg);
+static pthread_t            rec_thread_id;
 
 
 /* Signal handler */
@@ -160,7 +162,7 @@ int main (int argc, char *argv[]) {
 
 
     /* Get program options */
-    while((opt = getopt(argc, argv, "i:p:rc:s:a:")) != -1) {
+    while((opt = getopt(argc, argv, "d:i:p:rc:s:a:")) != -1) {
         switch (opt) {
             case 'd':
                 CANdevice0Index = strtol(optarg, NULL, 0);
@@ -201,7 +203,7 @@ int main (int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    if(CANdevice0Index != 0 || CANdevice0Index != 1) {
+    if(CANdevice0Index != 0 && CANdevice0Index != 1) {
         char s[120];
         snprintf(s, 120, "Can't find CAN device \"%d\", must be 0 or 1.", CANdevice0Index);
         CO_errExit(s);
@@ -349,6 +351,9 @@ int main (int argc, char *argv[]) {
                 if(pthread_setschedparam(rt_thread_id, SCHED_FIFO, &param) != 0)
                     CO_errExit("Program init - rt_thread set scheduler failed");
             }
+
+            if(pthread_create(&rec_thread_id, NULL, receive_thread, NULL) != 0)
+                CO_errExit("Program init - rec_thread creation failed");
 #endif
 
 #ifndef CO_SINGLE_THREAD
@@ -446,6 +451,7 @@ int main (int argc, char *argv[]) {
         CO_errExit("Program end - pthread_join failed");
     }
 #endif
+    pthread_join(rec_thread_id, NULL);
 
     /* Execute optional additional application code */
     app_programEnd();
@@ -522,3 +528,53 @@ static void* rt_thread(void* arg) {
     return NULL;
 }
 #endif
+
+#include "controlcan.h"
+static void* receive_thread(void* arg) {
+	int reclen=0;
+	VCI_CAN_OBJ rec[3000];//接收缓存，设为3000为佳。
+    VCI_INIT_CONFIG config;
+	int i,j;
+    int count=0;//数据列表中，用来存储列表序号。
+	
+    config.AccCode=0;
+    config.AccMask=0xFFFFFFFF;
+    config.Filter=1;//接收所有帧
+    config.Timing0=0x00;/*波特率500Kbps  0x00  0x1C*/
+    config.Timing1=0x1C;
+    config.Mode=0;//正常模式        
+
+    if(VCI_InitCAN(4, 0, 1, &config) != 1) {
+        printf(">>Init can2 error\n");
+    } else {
+        if(VCI_StartCAN(4, 0, 1) != 1) {
+            printf(">>Start can2 error\n");
+        }
+    }
+
+    while(CO_endProgram == 0) {
+        if((reclen=VCI_Receive(4, 0, 1, rec, 3000, 100))>0)//调用接收函数，如果有数据，进行数据处理显示。
+        {
+            for(j=0;j<reclen;j++)
+            {
+                printf("Index:%04d  ",count);count++;//序号递增
+                printf("CAN%d RX ID:0x%08X", 2, rec[j].ID);//ID
+                if(rec[j].ExternFlag==0) printf(" Standard ");//帧格式：标准帧
+                if(rec[j].ExternFlag==1) printf(" Extend   ");//帧格式：扩展帧
+                if(rec[j].RemoteFlag==0) printf(" Data   ");//帧类型：数据帧
+                if(rec[j].RemoteFlag==1) printf(" Remote ");//帧类型：远程帧
+                printf("DLC:0x%02X",rec[j].DataLen);//帧长度
+                printf(" data:0x");	//数据
+                for(i = 0; i < rec[j].DataLen; i++)
+                {
+                    printf(" %02X", rec[j].Data[i]);
+                }
+                printf(" TimeStamp:%d",rec[j].TimeStamp);//时间标识。
+                printf("\n");
+            }
+        }
+    }
+    printf("run thread exit\n");//退出接收线程	
+    pthread_exit(0);
+}
+

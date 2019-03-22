@@ -3,6 +3,7 @@
 /canopencgi/canopen.cgi
 *.o
 *.bak
+*.swp
 
 /doc/
 

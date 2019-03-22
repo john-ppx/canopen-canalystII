@@ -77,7 +77,7 @@ CO_ReturnError_t CO_CANmodule_init(
     uint16_t i;
 
     /* verify arguments */
-    if(CANmodule==NULL || CANbaseAddress==0 || rxArray==NULL || txArray==NULL){
+    if(CANmodule==NULL || CANbaseAddress < 0 || rxArray==NULL || txArray==NULL){
         ret = CO_ERROR_ILLEGAL_ARGUMENT;
     }
 
@@ -117,27 +117,47 @@ CO_ReturnError_t CO_CANmodule_init(
         if(VCI_OpenDevice(DRIVER_DEVICE_TYPE, 0, 0) != 1) {//打开设备
             ret = CO_ERROR_ILLEGAL_ARGUMENT;
         } else {
+            VCI_BOARD_INFO pInfo;//用来获取设备信息。
             //初始化参数，严格参数二次开发函数库说明书。
             VCI_INIT_CONFIG config;
+
+            if(VCI_ReadBoardInfo(DRIVER_DEVICE_TYPE, 0, &pInfo) == 1) {//读取设备序列号、版本等信息。
+                printf(">>Get VCI_ReadBoardInfo success!\n");
+
+                //printf(" %08X", pInfo.hw_Version);printf("\n");
+                //printf(" %08X", pInfo.fw_Version);printf("\n");
+                //printf(" %08X", pInfo.dr_Version);printf("\n");
+                //printf(" %08X", pInfo.in_Version);printf("\n");
+                //printf(" %08X", pInfo.irq_Num);printf("\n");
+                //printf(" %08X", pInfo.can_Num);printf("\n");
+                printf(">>Serial_Num:");
+                for (i = 0; i < 20; i++)
+                    printf("%c", pInfo.str_Serial_Num[i]);
+                printf("\n");
+
+                printf(">>hw_Type:");
+                for (i = 0; i < 10; i++)
+                    printf("%c", pInfo.str_hw_Type[i]);
+                printf("\n");	
+            }
+            
             config.AccCode=0;
             config.AccMask=0xFFFFFFFF;
             config.Filter=1;//接收所有帧
             config.Timing0=0x00;/*波特率500Kbps  0x00  0x1C*/
             config.Timing1=0x1C;
-            config.Mode=0;//正常模式		
+            config.Mode=0;//正常模式        
 
             if(VCI_InitCAN(DRIVER_DEVICE_TYPE, 0, CANbaseAddress, &config) != 1) {
+		        printf(">>Init can2 error\n");
                 ret = CO_ERROR_ILLEGAL_ARGUMENT;
             } else {
-	            if(VCI_StartCAN(DRIVER_DEVICE_TYPE, 0, CANbaseAddress) != 1)
+                if(VCI_StartCAN(DRIVER_DEVICE_TYPE, 0, CANbaseAddress) != 1) {
+		            printf(">>Start can2 error\n");
                     ret = CO_ERROR_ILLEGAL_ARGUMENT;
+                }
             }
         }
-    }
-
-    /* Additional check. */
-    if(ret == CO_ERROR_NO){
-        ret = CO_ERROR_ILLEGAL_ARGUMENT;
     }
 
     return ret;
@@ -146,8 +166,8 @@ CO_ReturnError_t CO_CANmodule_init(
 
 /******************************************************************************/
 void CO_CANmodule_disable(CO_CANmodule_t *CANmodule){
-	VCI_ResetCAN(DRIVER_DEVICE_TYPE, 0, CANmodule->CANbaseAddress);//复位CAN1通道。
-	VCI_CloseDevice(DRIVER_DEVICE_TYPE, 0);//关闭设备。
+    VCI_ResetCAN(DRIVER_DEVICE_TYPE, 0, CANmodule->CANbaseAddress);//复位CAN1通道。
+    VCI_CloseDevice(DRIVER_DEVICE_TYPE, 0);//关闭设备。
 }
 
 
