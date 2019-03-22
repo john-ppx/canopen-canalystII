@@ -107,6 +107,8 @@ fprintf(stderr,
 fprintf(stderr,
 "\n"
 "Options:\n"
+"  -d <device ID>      CanalystII CAN channel (0,1). If not specified, the \n"
+"                      default value is 0.\n"
 "  -i <Node ID>        CANopen Node-id (1..127). If not specified, value from\n"
 "                      Object dictionary (0x2101) is used.\n"
 "  -p <RT priority>    Realtime priority of RT task (RT disabled by default).\n"
@@ -144,7 +146,6 @@ int main (int argc, char *argv[]) {
     int opt;
     bool_t firstRun = true;
 
-    char* CANdevice = NULL;         /* CAN device, configurable by arguments. */
     bool_t nodeIdFromArgs = false;  /* True, if program arguments are used for CANopen Node Id */
     int nodeId = -1;                /* Use value from Object Dictionary or set to 1..127 by arguments */
     bool_t rebootEnable = false;    /* Configurable by arguments */
@@ -161,6 +162,9 @@ int main (int argc, char *argv[]) {
     /* Get program options */
     while((opt = getopt(argc, argv, "i:p:rc:s:a:")) != -1) {
         switch (opt) {
+            case 'd':
+                CANdevice0Index = strtol(optarg, NULL, 0);
+                break;
             case 'i':
                 nodeId = strtol(optarg, NULL, 0);
                 nodeIdFromArgs = true;
@@ -184,11 +188,6 @@ int main (int argc, char *argv[]) {
         }
     }
 
-    if(optind < argc) {
-        CANdevice = argv[optind];
-        CANdevice0Index = if_nametoindex(CANdevice);
-    }
-
     if(nodeIdFromArgs && (nodeId < 1 || nodeId > 127)) {
         fprintf(stderr, "Wrong node ID (%d)\n", nodeId);
         printUsage(argv[0]);
@@ -202,9 +201,9 @@ int main (int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    if(CANdevice0Index == 0) {
+    if(CANdevice0Index != 0 || CANdevice0Index != 1) {
         char s[120];
-        snprintf(s, 120, "Can't find CAN device \"%s\"", CANdevice);
+        snprintf(s, 120, "Can't find CAN device \"%d\", must be 0 or 1.", CANdevice0Index);
         CO_errExit(s);
     }
 
@@ -460,7 +459,7 @@ int main (int argc, char *argv[]) {
     taskMain_close();
     CO_delete(CANdevice0Index);
 
-    printf("%s on %s (nodeId=0x%02X) - finished.\n\n", argv[0], CANdevice, nodeId);
+    printf("%s on %d (nodeId=0x%02X) - finished.\n\n", argv[0], CANdevice0Index, nodeId);
 
     /* Flush all buffers (and reboot) */
     if(rebootEnable && reset == CO_RESET_APP) {

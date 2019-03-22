@@ -1,7 +1,7 @@
 # Makefile for CANopend.
 
 
-STACKDRV_SRC =  ../CANopenNode/stack/socketCAN
+STACKDRV_SRC =  ./canalystII
 STACK_SRC =     ../CANopenNode/stack
 CANOPEN_SRC =   ../CANopenNode
 CANOPEND_SRC =  ./src
